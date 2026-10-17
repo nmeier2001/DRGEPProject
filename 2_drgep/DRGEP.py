@@ -1,4 +1,4 @@
-from functions.create_matrix import create_matrix, load_rate_vector, select_species, filter_reactions, filter_reactions_with_delta, compute_RTS, plot_RAB_fraction_vs_epsilon
+from functions.create_matrix import create_matrix, load_rate_vector, select_species, filter_reactions, filter_reactions_with_sigma, compute_RTS, plot_RAB_fraction_vs_epsilon
 from functions.select_timepoints_one_puls import select_timepoints_plateau
 import pickle as pkl
 from functions.change_dat import ChangeDat
@@ -18,7 +18,7 @@ study_path = BASE_DIR / "CombinedRuns_20260715_0828.pkl"
 
 # DRGEP parameters
 epsilon_list = [0.01]  # Threshold for DRGEP, Spezies reduction; for analysis epsilon has to start with 0.0
-delta_list = [0.00] # Threshold for DRGEP, Reaction reduction
+sigma_list = [0.00] # Threshold for DRGEP, Reaction reduction
 targets = ['CO2', 'CO'] # List of species to be retained in the reduced mechanism
 
 # Index of the run to be processed
@@ -86,20 +86,20 @@ for epsilon in epsilon_list:
             dat_file_path=BASE_DIR / "Model" / "model_complete.dat",
             skeletal_mechanism_path=skeletal_mechanism_path,
             epsilon=epsilon,
-            delta=0.0
+            sigma=0.0
         )
 
     else:
-        # Delta-Loop only for epsilon > 0.0
-        for delta in delta_list:
-            dic_reduced[powplug][epsilon][delta] = {}
+        # Sigma-Loop only for epsilon > 0.0
+        for sigma in sigma_list:
+            dic_reduced[powplug][epsilon][sigma] = {}
 
-            skeletal_rxn_info = filter_reactions_with_delta(
+            skeletal_rxn_info = filter_reactions_with_sigma(
                 nu, rxn_info, kept_species, species_list,
-                dic_rates, delta=delta
+                dic_rates, sigma=sigma
             )
 
-            dic_reduced[powplug][epsilon][delta] = create_data_reduced_dic(
+            dic_reduced[powplug][epsilon][sigma] = create_data_reduced_dic(
                 kept_species=kept_species,
                 eliminated_species=[s for s in species_list if s not in kept_species],
                 number_reactions=len(skeletal_rxn_info),
@@ -107,7 +107,7 @@ for epsilon in epsilon_list:
                 epsilon=epsilon
             )
 
-            skeletal_mechanism_path = BASE_DIR / f"skeletal_mechanism_{epsilon}_{delta}.pkl"
+            skeletal_mechanism_path = BASE_DIR / f"skeletal_mechanism_{epsilon}_{sigma}.pkl"
             with open(skeletal_mechanism_path, 'wb') as f:
                 pkl.dump(skeletal_rxn_info, f)
 
@@ -115,7 +115,7 @@ for epsilon in epsilon_list:
                 dat_file_path=BASE_DIR / "dat-file" / "model_complete.dat",
                 skeletal_mechanism_path=skeletal_mechanism_path,
                 epsilon=epsilon,
-                delta=delta
+                sigma=sigma
             )
 
 prepare_reduced_run_folders(

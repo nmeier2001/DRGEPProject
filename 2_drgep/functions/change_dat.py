@@ -17,11 +17,11 @@ class ChangeDat:
     Class to change the data in the dat file to the reduced mechanism. The reduced mechanism is stored in the skeletal_mechanism.pkl file.
     '''
 
-    def __init__(self, dat_file_path, skeletal_mechanism_path, epsilon=0.0, delta=0.01):
+    def __init__(self, dat_file_path, skeletal_mechanism_path, epsilon=0.0, sigma=0.01):
         self.dat_file_path = dat_file_path
         self.skeletal_mechanism_path = skeletal_mechanism_path
         self.epsilon = epsilon
-        self.delta = delta
+        self.sigma = sigma
 
         self.copy_dat_file_path = Path(self.dat_file_path.parent)  / "modified_dat"
         print(f"Copy dat file path: {self.copy_dat_file_path}")
@@ -36,7 +36,7 @@ class ChangeDat:
         with open(self.skeletal_mechanism_path, 'rb') as f:
             self.skeletal_rxn_info = pkl.load(f)
     # creat copy of the original dat file to change
-        self.output_dat_path = self.copy_dat_file_path / f"model_{self.epsilon}_{self.delta}.dat"
+        self.output_dat_path = self.copy_dat_file_path / f"model_{self.epsilon}_{self.sigma}.dat"
         shutil.copy(self.dat_file_path, self.output_dat_path)
     #read the copy dat file
         with open(self.output_dat_path, 'r', encoding='utf-8') as f:
@@ -80,8 +80,6 @@ class ChangeDat:
         nicht über den Label-Tag – robuster gegenüber fehlenden oder mehrdeutigen Labels.
         """
 
-        # Skelett-Reaktionen als normalisierte Strings aufbauen
-        # rxn_info['reaction'] ist z.B. 'E+CO2>E+CO+O'
         skeletal_rxn_strings = {
             self._normalize_reaction(info['reaction'])
             for info in self.skeletal_rxn_info.values()
@@ -90,8 +88,6 @@ class ChangeDat:
         with open(self.output_dat_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
 
-        # Regex: extrahiert die Reaktionsgleichung vor dem ':'
-        # z.B. 'E + CO2 > E + CO2va' aus der Zeile
         rxn_pattern = re.compile(r'^!?\s*(.+?)\s*:')
 
         for i in range(91, len(lines)):
@@ -113,12 +109,9 @@ class ChangeDat:
             in_skeletal  = rxn_norm in skeletal_rxn_strings
 
             if in_skeletal and is_commented:
-                # Fall 1: soll behalten werden, ist aber auskommentiert → einkommentieren
                 lines[i] = self._remove_leading_comment(line)
             elif not in_skeletal and not is_commented:
-                # Fall 4: soll entfernt werden, ist nicht auskommentiert → auskommentieren
                 lines[i] = f'!{line}'
-            # Fall 2 + 3: bereits im richtigen Zustand → unverändert
 
         with open(self.output_dat_path, 'w', encoding='utf-8') as f:
             f.writelines(lines)
@@ -136,7 +129,6 @@ class ChangeDat:
         """
         rxn_str = rxn_str.strip()
 
-        # Alles nach '!' abschneiden (inline Kommentare)
         if '!' in rxn_str:
             rxn_str = rxn_str[:rxn_str.index('!')].strip()
 
@@ -145,7 +137,6 @@ class ChangeDat:
 
         lhs, rhs = rxn_str.split('>', 1)
 
-        # Spezies aufteilen, Whitespace entfernen, sortieren
         reactants = sorted(s.strip() for s in lhs.split('+') if s.strip())
         products  = sorted(s.strip() for s in rhs.split('+') if s.strip())
 
@@ -163,4 +154,4 @@ if __name__ == "__main__":
     dat_file_path = FILE_PATH / 'model.dat'
     skeletal_mechanism_path = BASE_DIR / 'skeletal_mechanism.pkl'
 
-    changer = ChangeDat(dat_file_path, skeletal_mechanism_path, epsilon=0.0, delta=0.01)
+    changer = ChangeDat(dat_file_path, skeletal_mechanism_path, epsilon=0.0, sigma=0.01)

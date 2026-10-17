@@ -6,7 +6,7 @@ from scipy.signal import find_peaks
 
 def sliding_window(EN, window_size=5):
     """
-    Berechnet den gleitenden Mittelwert von E/N über ein Fenster.
+    Calculates the moving average of E/N over a window.
     """
     EN_log = []
     for x in EN:
@@ -30,19 +30,19 @@ def sliding_window(EN, window_size=5):
 
 def select_timepoints_plateau(time: np.array, EN: np.array, n_points=0):
     """
-    Zeitpunktselektion für E/N-Verläufe mit Plateau-Struktur.
-    Punkte:
-    1. Absolutes Maximum (Spitze beim Anstieg)
-    2. Plateau 1: stabiler Bereich nach Peak
-    3. Übergang zwischen Plateaus: stärkster relativer Abfall
-    4. Quasi-Gleichgewicht: letzter Zeitpunkt
+    Selects time points for E/N profiles with a plateau structure.
+    Points:
+    1. Absolute maximum (peak during the rise)
+    2. Plateau 1: stable region after the peak
+    3. Transition between plateaus: strongest relative decrease
+    4. Quasi-equilibrium: final time point
     """
 
     _, peaks_idx = sliding_window(EN, window_size=5)
     #print(f"Peaks found at indices: {peaks_idx}")
 
     timepoints = {}
-    # --- 1. Absolutes Maximum (Spitze beim Anstieg) ---
+    # --- 1. Absolute maximum (peak during the rise) ---
     idx_peak = np.argmax(EN)
     timepoints['EN_peak'] = {
         'idx':    idx_peak,
@@ -51,8 +51,8 @@ def select_timepoints_plateau(time: np.array, EN: np.array, n_points=0):
         'reason': 'Absolutes E/N Maximum'
     }
 
-    # 2. Peak Plateau: schwacher Abstieg nach dem Peak
-    idx_plateau = idx_peak + 16  # Beispiel: 73 Schritte nach dem Peak
+    # 2. Peak plateau: slight decrease after the peak
+    idx_plateau = idx_peak + 16  # Example: 73 steps after the peak
     timepoints['plateau_1'] = {
         'idx':    idx_plateau,
         'time':   time[idx_plateau],
@@ -60,7 +60,7 @@ def select_timepoints_plateau(time: np.array, EN: np.array, n_points=0):
         'reason': 'Plateau 1: stabiler Bereich nach Peak'
     }
 
-    # 3. zweiter Peak: anstieg nahe null kurz vor abfall
+    # 3. Second peak: rise close to zero shortly before the decrease
     timepoints['2ed peak'] = {
         'idx':    peaks_idx[1],
         'time':   time[peaks_idx[1]],
@@ -68,7 +68,7 @@ def select_timepoints_plateau(time: np.array, EN: np.array, n_points=0):
         'reason': 'Übergang zwischen Plateaus'
     }
 
-    # 4. Abfall vor letztem Plateau: stärkster Abfall
+    # 4. Decrease before the final plateau: strongest decrease
     timepoints['fall'] = {
         'idx':    peaks_idx[2],
         'time':   time[peaks_idx[2]],
@@ -76,7 +76,7 @@ def select_timepoints_plateau(time: np.array, EN: np.array, n_points=0):
         'reason': 'Stärkster Abfall vor letztem Plateau'
     }
 
-    # 5. Afterglow: stabiler Bereich nach Abfall
+    # 5. Afterglow: stable region after the decrease
     timepoints['afterglow'] = {
         'idx':    peaks_idx[2] + 3000,
         'time':   time[peaks_idx[2] + 3000],
@@ -84,7 +84,7 @@ def select_timepoints_plateau(time: np.array, EN: np.array, n_points=0):
         'reason': 'Afterglow: stabiler Bereich nach Abfall'
     }
 
-    # 6. Quasi-Gleichgewicht: letzter Zeitpunkt
+    # 6. Quasi-equilibrium: final time point
     timepoints['quasi_steady'] = {
         'idx':    len(time) - 1,
         'time':   time[len(time) - 1],
@@ -92,7 +92,7 @@ def select_timepoints_plateau(time: np.array, EN: np.array, n_points=0):
         'reason': 'Quasi-Gleichgewicht, thermische Chemie dominiert'
     }
 
-    # 7. Optional: weitere Zeitpunkte, falls n_points > 0
+    # 7. Optional: additional time points if n_points > 0
     if n_points > 0:
         existing_keys = list(timepoints.keys())
         
@@ -103,15 +103,15 @@ def select_timepoints_plateau(time: np.array, EN: np.array, n_points=0):
             t_start = time[start_idx]
             t_end   = time[end_idx]
             
-            # Gleichmäßig im Log-Raum → dann nächsten Index im Array finden
+            # Distribute points evenly in log space, then find the nearest array index
             t_between = np.logspace(
                 np.log10(t_start), 
                 np.log10(t_end), 
                 n_points + 2
-            )[1:-1]  # start und end abschneiden
+            )[1:-1]  # Exclude the start and end points
             
             for j, t_target in enumerate(t_between):
-                # Nächsten tatsächlichen Zeitpunkt im Array finden
+                # Find the nearest actual time point in the array
                 idx = np.argmin(np.abs(time - t_target))
                 
                 timepoints[f'between_{i}_{i+1}_pt{j}'] = {

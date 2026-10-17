@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from functions.functions_analysis import add_EN_to_study, calculate_SEI, calculate_energy_efficiency, calculate_ratio, plot_xpow_size, plot_xpow_from_study, plot_rates, load_study_cache, check_file_exists, DeviationAnalyzer
+from functions.functions_analysis import add_EN_to_study, calculate_SEI, calculate_energy_efficiency, calculate_ratio, plot_xpow_size, plot_rates, load_study_cache, check_file_exists, DeviationAnalyzer
 from functions.plot_overview import PlotOverview
 from functions.safe_run_pickle import load_save_study
 from functions.combine_pkl import combine_runs

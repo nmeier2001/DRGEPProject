@@ -29,7 +29,7 @@ def create_matrix(labels_path: str) -> tuple[np.ndarray, dict, list, list]:
         reactants_raw = [s.strip() for s in reactants_str.split('+')]
         products_raw  = [s.strip() for s in products_str.split('+')]
 
-        # Stöchiometrie durch Zählen doppelter Einträge
+        # Build stoichiometry by counting duplicate entries
         reactants_dict = {}
         for r in reactants_raw:
             reactants_dict[r] = reactants_dict.get(r, 0) - 1
@@ -41,13 +41,13 @@ def create_matrix(labels_path: str) -> tuple[np.ndarray, dict, list, list]:
         rxn_info[label] = {
             'group':      group.strip(),
             'reaction':   reaction,
-            'reactants':  list(reactants_dict.keys()),   # BUG FIX: war reactants_raw
-            'stoch_reac': list(reactants_dict.values()), # jetzt konsistent mit reactants
-            'products':   list(products_dict.keys()),    # BUG FIX: war products_raw
-            'stoch_prod': list(products_dict.values()),  # jetzt konsistent mit products
+            'reactants':  list(reactants_dict.keys()),
+            'stoch_reac': list(reactants_dict.values()), 
+            'products':   list(products_dict.keys()),    
+            'stoch_prod': list(products_dict.values()),  
         }
 
-    # Geordnete Listen für Matrix-Indizes
+    # Ordered lists for matrix indices
     rxn_list    = list(rxn_info.keys())
     rxn_idx     = {label: i for i, label in enumerate(rxn_list)}
 
@@ -58,7 +58,7 @@ def create_matrix(labels_path: str) -> tuple[np.ndarray, dict, list, list]:
     species_list = sorted(species_set)
     species_idx  = {s: i for i, s in enumerate(species_list)}
 
-    # Matrix als numpy array aufbauen
+    # Build the matrix as a NumPy array
     nu = np.zeros((len(species_list), len(rxn_list)), dtype=float)
 
     for label, info in rxn_info.items():
@@ -91,12 +91,10 @@ def load_rate_vector(study_path: str, time: float, run: int) -> np.ndarray:
     tec = study['runs'][run]['tec']
     time_series = tec['T (s)']
 
-    # Nächsten Zeitpunkt finden (pandas-kompatibel)
     idx_time = (time_series - time).abs().argmin()
 
-    # Alle RATE_-Spalten als geordneten Vektor extrahieren
     rate_cols = [col for col in tec.columns if col.startswith('RATE_')]
-    rate_vector = tec.iloc[idx_time][rate_cols].values  # numpy array
+    rate_vector = tec.iloc[idx_time][rate_cols].values
 
     return rate_vector, rate_cols
 
@@ -115,41 +113,38 @@ def compute_rAB(nu: np.ndarray, omega: np.ndarray, species_list: list, tp_name: 
     Returns:
         r_AB:  np.ndarray [n_species × n_species]   Coupling coefficients
     """
-    # Schritt 1: |ν| · |ω| → [n_species × n_reactions]
+    # Step 1: |ν| · |ω| → [n_species × n_reactions]
     weighted = np.abs(nu) * np.abs(omega)[np.newaxis, :]
 
-    # Schritt 2: Nenner → Gesamtumsatz pro Spezies [n_species]
+    # Step 2: denominator → total turnover per species [n_species]
     denom = weighted.sum(axis=1)
-    denom_safe = np.where(denom > 0, denom, 1.0)  # Division durch 0 vermeiden
+    denom_safe = np.where(denom > 0, denom, 1.0)  # Avoid division by zero
 
-    # Schritt 3: B_mask → 1 wenn Spezies B in Reaktion i vorkommt [n_species × n_reactions]
+    # Step 3: B_mask → 1 if species B occurs in reaction i [n_species × n_reactions]
     B_mask = (nu != 0).astype(float)
 
-    # Schritt 4: r_AB → [n_species × n_species]
-    # weighted @ B_mask.T → Zähler: Umsatz von A in Reaktionen die auch B enthalten
+    # Step 4: r_AB → [n_species × n_species]
+    # weighted @ B_mask.T → numerator: turnover of A in reactions that also contain B
     r_AB = (weighted @ B_mask.T) / denom_safe[:, np.newaxis]
-    # save r_AB as an excel file with the spezies names as the row and column names
-    # r_AB_df = pd.DataFrame(r_AB, index=species_list, columns=species_list)
-    # r_AB_df.to_excel(f"C:/Users/NiklasMeier/Desktop/Mechanism reduction DRGEP/r_AB_{tp_name}.xlsx")
 
     return r_AB
 
 def compute_generalized_R(r_primary: np.ndarray, species_list: list, 
                            targets: list) -> np.ndarray:
     """
-    Echter DRGEP-Schritt: generalisierter Koeffizient R_{T,S} via
-    Widest-Path-Suche (max-Produkt) von jeder Zielspezies aus.
+    True DRGEP step: generalized coefficient R_{T,S} via
+    widest-path search (max-product) starting from each target species.
     """
     n = len(species_list)
     species_idx = {s: i for i, s in enumerate(species_list)}
-    R = np.zeros(n)  # finales Maximum über alle Ziele
+    R = np.zeros(n)  # Final maximum over all targets
 
     for t in targets:
         ti = species_idx[t]
         best = np.zeros(n)
         best[ti] = 1.0
         visited = np.zeros(n, dtype=bool)
-        heap = [(-1.0, ti)]  # Max-Heap via negiertem Wert
+        heap = [(-1.0, ti)]  # Max-heap using negated values
 
         while heap:
             neg_val, i = heapq.heappop(heap)
@@ -172,9 +167,9 @@ def compute_generalized_R(r_primary: np.ndarray, species_list: list,
 def compute_RTS(nu: np.ndarray, dic_rates: dict, species_list: list, 
                  targets: list) -> np.ndarray:
     """
-    Berechnet R_T,S korrekt: pro Zeitpunkt erst primäre r_AB, 
-    dann SOFORT die Pfadsuche (compute_generalized_R), 
-    und erst danach das Maximum über Zeitpunkte.
+    Calculates R_T,S: first compute primary r_AB for each time point,
+    then immediately run the path search (compute_generalized_R),
+    and only then take the maximum over time points.
     """
     n_species = len(species_list)
     R_T_S = np.zeros(n_species)
@@ -182,10 +177,10 @@ def compute_RTS(nu: np.ndarray, dic_rates: dict, species_list: list,
     for tp_name, omega in dic_rates.items():
         r_AB_t = compute_rAB(nu, omega[0], species_list, tp_name)
 
-        # Pfadsuche JETZT, pro Zeitpunkt — nicht erst am Ende
+        # Run the path search now for each time point, not only at the end
         R_T_S_t = compute_generalized_R(r_AB_t, species_list, targets)
 
-        # Maximum über Zeitpunkte NACH der Pfadsuche
+        # Take the maximum over time points after the path search
         R_T_S = np.maximum(R_T_S, R_T_S_t)
 
         print(f"{tp_name:35s} | aktive Reaktionen: {(np.abs(omega[0]) > 1e-30).sum()}")
@@ -222,19 +217,19 @@ def filter_reactions(rxn_info: dict, kept_species: list) -> dict:
 
     return skeletal_rxn_info
 
-def filter_reactions_with_delta(nu: np.ndarray,
+def filter_reactions_with_sigma(nu: np.ndarray,
                                  rxn_info: dict,
                                  kept_species: list,
                                  species_list: list,
                                  dic_rates: dict,
-                                 delta: float = 0.01) -> dict:
+                                 sigma: float = 0.01) -> dict:
 
     kept_set    = set(kept_species)
     species_idx = {s: i for i, s in enumerate(species_list)}
     rxn_list    = list(rxn_info.keys())
     rxn_idx     = {label: j for j, label in enumerate(rxn_list)}
 
-    # --- Stufe 1: Spezies-Check ---
+    # --- Stage 1: species check ---
     stage1_rxns = {
         label: info for label, info in rxn_info.items()
         if set(info['reactants'] + info['products']) - {'M'} <= kept_set
@@ -244,34 +239,30 @@ def filter_reactions_with_delta(nu: np.ndarray,
 
     print(f"Stufe 1: {len(rxn_info)} → {len(stage1_rxns)} Reaktionen")
 
-    if delta == 0:
+    if sigma == 0:
         return stage1_rxns
 
-    # --- Bug 2 Fix: nu_net aus rxn_info direkt berechnen ---
-    # Statt nu zu verwenden (wo Edukte von Produkten überschrieben werden),
-    # berechne nu_net = stoch_prod - stoch_reac für jede Reaktion neu
     kept_rows  = [species_idx[s] for s in kept_species if s in species_idx]
     n_kept     = len(kept_rows)
     n_stage1   = len(stage1_labels)
     kept_list  = [kept_species[i] for i in range(len(kept_species))
                   if kept_species[i] in species_idx]
 
-    # Nettostöchiometrie aufbauen: Produkte - Edukte
     nu_net = np.zeros((n_kept, n_stage1))
     sp_to_row = {s: i for i, s in enumerate(kept_list)}
 
     for j, label in enumerate(stage1_labels):
         info = stage1_rxns[label]
 
-        # Edukte: negativ
+        # Reactants: negative
         for sp, stoch in zip(info['reactants'], info['stoch_reac']):
             if sp in sp_to_row:
-                nu_net[sp_to_row[sp], j] += stoch  # stoch_reac ist bereits negativ
+                nu_net[sp_to_row[sp], j] += stoch  # stoch_reac is already negative
 
-        # Produkte: positiv
+        # Products: positive
         for sp, stoch in zip(info['products'], info['stoch_prod']):
             if sp in sp_to_row:
-                nu_net[sp_to_row[sp], j] += stoch  # stoch_prod ist positiv
+                nu_net[sp_to_row[sp], j] += stoch  # stoch_prod is positive
 
     print(f"nu_net nonzero: {np.count_nonzero(nu_net)}")
     print(f"nu_net min/max: {nu_net.min():.2f} / {nu_net.max():.2f}")
@@ -279,16 +270,12 @@ def filter_reactions_with_delta(nu: np.ndarray,
     # Sanity check: Katalytische Reaktionen (E+CO2>E+CO2) sollten nu_net=0 haben
     cat_count = np.sum(np.all(nu_net == 0, axis=0))
     print(f"Katalytische Reaktionen (nu_net=0): {cat_count} "
-          f"→ werden automatisch entfernt wenn delta > 0")
+          f"→ werden automatisch entfernt wenn sigma > 0")
 
-    # --- Bug 1 Fix: rate_cols direkt als Keys verwenden ---
-    # stage1_labels = 'RATE_____1', rate_cols = ['RATE_____1', ...]
-    # → direkt mappen ohne .replace()
     max_importance = np.zeros(n_stage1)
 
     for tp_name, (rate_vector, rate_cols) in dic_rates.items():
 
-        # Bug 1 Fix: rate_cols direkt als Map-Keys
         rate_map = {col: val for col, val in zip(rate_cols, rate_vector)}
 
         omega_sub = np.array([
@@ -301,8 +288,8 @@ def filter_reactions_with_delta(nu: np.ndarray,
             print(f"  ⚠ Zeitpunkt {tp_name}: alle Raten = 0, überspringe")
             continue
 
-        # P_ij: Produktionsbeitrag (nu_net > 0)
-        # C_ij: Verbrauchsbeitrag  (nu_net < 0)
+        # P_ij: production contribution (nu_net > 0)
+        # C_ij: consumption contribution (nu_net < 0)
         prod_contrib = np.maximum(0,  nu_net) * omega_sub[np.newaxis, :]
         cons_contrib = np.maximum(0, -nu_net) * omega_sub[np.newaxis, :]
 
@@ -322,14 +309,14 @@ def filter_reactions_with_delta(nu: np.ndarray,
               f"omega nonzero={nonzero}, "
               f"max importance={importance_t.max():.4f}")
 
-    keep_mask = max_importance >= delta
+    keep_mask = max_importance >= sigma
     skeletal_rxn_info = {
         label: stage1_rxns[label]
         for j, label in enumerate(stage1_labels)
         if keep_mask[j]
     }
 
-    print(f"Stufe 2 (δ={delta:.3f}): "
+    print(f"Stufe 2 (σ={sigma:.3f}): "
           f"{len(stage1_rxns)} → {len(skeletal_rxn_info)} "
           f"({len(stage1_rxns) - len(skeletal_rxn_info)} entfernt)")
 
@@ -340,9 +327,9 @@ def plot_RAB_fraction_vs_epsilon(
         timepoint_fn, targets,
         epsilon_list=None, save_dir=None):
     """
-    R_TS = compute_RTS(...) ist bereits der vollständig generalisierte
-    R_{T,S}-Vektor pro Spezies (Maximum über alle Pfade UND alle Targets
-    UND alle Zeitpunkte). Kein weiterer BFS-/Indexierungsschritt nötig.
+    R_TS = compute_RTS(...) is already the fully generalized
+    R_{T,S} vector per species (maximum over all paths, targets,
+    and time points). No additional BFS or indexing step is needed.
     """
     plt.rcParams.update({'font.size': 14})
     if epsilon_list is None:
@@ -384,9 +371,9 @@ def plot_RAB_fraction_vs_epsilon(
             for tp_idx, tp in timepoints.items()
         }
 
-        # 1D-Vektor: bereits fertiger R_{T,S}-Wert pro Spezies
+        # 1D vector: already-computed R_{T,S} value for each species
         R_TS = compute_RTS(nu, dic_rates, species_list, targets)
-        R_TS[target_indices] = 1.0  # Targets selbst immer behalten
+        R_TS[target_indices] = 1.0  # Always keep the targets
         R_TS_others = R_TS[non_target_mask]
 
         # --- Histogramm pro Run ---
